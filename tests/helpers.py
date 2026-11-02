@@ -42,7 +42,8 @@ NOTES = {
     IDS[1]: note("Home Assistant conventions", "Naming rules", ["home-assistant"],
                  "up-to-date", "2026-10-12", "# Conventions\n\nPrefix automations with the domain."),
     IDS[2]: note("Résumé des incidents", "Incident summary", ["docker", "home-assistant"],
-                 "up-to-date", "2026-10-30", "# Incidents\n\nDocker timeouts hit Home Assistant."),
+                 "up-to-date", "2026-10-30", ("# Incidents\n\nDocker timeouts hit Home Assistant.\n\n## Cause\n\nSlow disk scan.\n\n"
+                 "## Fix\n\n```bash\n# not a heading\ndocker system df\n```\n\n### Detail\n\nOne step.\n\n## Notes\n\nNothing else.")),
 }
 
 
@@ -53,6 +54,12 @@ def run(*args, cwd):
 def git_out(repo_dir, *args):
     return subprocess.run(["git", *args], cwd=repo_dir, check=True, capture_output=True,
                           text=True).stdout.strip()
+
+
+def git_raw(repo_dir, *args):
+    """Like git_out, but keeps the output exactly as it is (trailing newline included)."""
+    return subprocess.run(["git", *args], cwd=repo_dir, check=True, capture_output=True,
+                          text=True).stdout
 
 
 def rpc(client, method, params=None):

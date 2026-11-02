@@ -13,6 +13,29 @@ from notes_manager.snapshot import Snapshot
 from notes_manager.utils import find_secret, suggest
 
 
+def validate_tags(snap: Snapshot, tags: list[str]) -> None:
+    if not tags or len(tags) > MAX_TAGS or len(set(tags)) != len(tags):
+        raise ValueError(f"tags must be a list of 1-{MAX_TAGS} distinct values")
+    for tag in tags:
+        if tag not in snap.tags:
+            raise ValueError(f"undeclared tag '{tag}'.{suggest(tag, snap.tags)} See list_tags.")
+
+
+def validate_status(snap: Snapshot, status: str) -> None:
+    if status not in snap.statuses:
+        raise ValueError(f"undeclared status '{status}'.{suggest(status, snap.statuses)} "
+                         f"Allowed: {', '.join(snap.statuses)}")
+
+
+def validate_body(body: str, *extra: str) -> None:
+    """Size limit and secret scan for a body, plus any other text that goes in the note."""
+    if len(body.encode("utf-8")) > MAX_BODY_BYTES:
+        raise ValueError(f"body is larger than {MAX_BODY_BYTES} bytes")
+    secret = find_secret("\n".join((*extra, body)))
+    if secret:
+        raise ValueError(f"refused: the text looks like it contains a secret ({secret})")
+
+
 def validate_new_note(snap: Snapshot, title: str, description: str, tags: list[str],
                       status: str, body: str) -> None:
     """Raise ``ValueError`` with an actionable message if the note is not acceptable."""
@@ -20,19 +43,9 @@ def validate_new_note(snap: Snapshot, title: str, description: str, tags: list[s
         raise ValueError(f"title must be 1-{MAX_TITLE} characters on a single line")
     if not description.strip() or len(description) > MAX_DESCRIPTION or CONTROL_RE.search(description):
         raise ValueError(f"description must be 1-{MAX_DESCRIPTION} characters on a single line")
-    if not tags or len(tags) > MAX_TAGS or len(set(tags)) != len(tags):
-        raise ValueError(f"tags must be a list of 1-{MAX_TAGS} distinct values")
-    for tag in tags:
-        if tag not in snap.tags:
-            raise ValueError(f"undeclared tag '{tag}'.{suggest(tag, snap.tags)} See list_tags.")
-    if status not in snap.statuses:
-        raise ValueError(f"undeclared status '{status}'.{suggest(status, snap.statuses)} "
-                         f"Allowed: {', '.join(snap.statuses)}")
-    if len(body.encode("utf-8")) > MAX_BODY_BYTES:
-        raise ValueError(f"body is larger than {MAX_BODY_BYTES} bytes")
-    secret = find_secret(f"{title}\n{description}\n{body}")
-    if secret:
-        raise ValueError(f"refused: the text looks like it contains a secret ({secret})")
+    validate_tags(snap, tags)
+    validate_status(snap, status)
+    validate_body(body, title, description)
 
 
 def validate_vocab_entry(kind: str, name: str, description: str) -> None:

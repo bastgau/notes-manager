@@ -11,7 +11,7 @@ def main_file(remote, name):
 
 def test_set_tag_declares_a_tag_that_write_doc_can_use_at_once(client, env):
     remote = env[4]
-    out = call(client, "set_tag", tag="networking", description="Network and DNS")
+    out = call(client, "declare_tag", tag="networking", description="Network and DNS")
     assert out["created"] is True and out["branch"] == "main"
     tags_yaml = main_file(remote, "tags.yaml")
     assert "networking:\n  description: Network and DNS" in tags_yaml
@@ -25,7 +25,7 @@ def test_set_tag_declares_a_tag_that_write_doc_can_use_at_once(client, env):
 
 def test_set_tag_updates_only_the_description(client, env):
     remote = env[4]
-    out = call(client, "set_tag", tag="docker", description="Containers and images")
+    out = call(client, "declare_tag", tag="docker", description="Containers and images")
     assert out["created"] is False
     assert main_file(remote, "tags.yaml") == TAGS_YAML.replace("Docker things", "Containers and images").strip()
     assert git_out(remote, "log", "-1", "--format=%s", "main") == "docs: describe tag docker"
@@ -33,20 +33,20 @@ def test_set_tag_updates_only_the_description(client, env):
 
 def test_new_tag_is_inserted_in_alphabetical_order(client, env):
     remote = env[4]
-    call(client, "set_tag", tag="git", description="Git usage")
-    call(client, "set_tag", tag="zzz-last", description="Sorts last")
+    call(client, "declare_tag", tag="git", description="Git usage")
+    call(client, "declare_tag", tag="zzz-last", description="Sorts last")
     keys = [line[:-1] for line in main_file(remote, "tags.yaml").splitlines() if line.endswith(":") and line[0] != " "]
     assert keys == ["docker", "git", "home-assistant", "migration", "unused", "zzz-last"]
 
 
 def test_description_with_special_characters_round_trips(client):
     description = 'Time: 10:30 # not a comment "quoted"'
-    call(client, "set_tag", tag="timing", description=description)
+    call(client, "declare_tag", tag="timing", description=description)
     assert {"tag": "timing", "description": description, "count": 0} in call(client, "list_tags")
 
 
 def test_set_identical_description_is_nothing_to_change(client):
-    assert "nothing to change" in call(client, "set_tag", tag="docker", description="Docker things")["error"]
+    assert "nothing to change" in call(client, "declare_tag", tag="docker", description="Docker things")["error"]
 
 
 @pytest.mark.parametrize("kwargs,expected", [
@@ -59,15 +59,15 @@ def test_set_tag_validation_does_not_touch_main(client, env, kwargs, expected):
     remote = env[4]
     before = git_out(remote, "rev-parse", "main")
     args = {"tag": "newtag", "description": "A description", **kwargs}
-    assert expected in call(client, "set_tag", **args)["error"]
+    assert expected in call(client, "declare_tag", **args)["error"]
     assert git_out(remote, "rev-parse", "main") == before
 
 
 def test_set_status_declares_and_updates(client, env):
     remote = env[4]
-    assert call(client, "set_status", status="archived", description="No longer maintained")["created"]
+    assert call(client, "declare_status", status="archived", description="No longer maintained")["created"]
     assert "archived:\n  description: No longer maintained" in main_file(remote, "status.yaml")
-    assert not call(client, "set_status", status="todo", description="Still to do")["created"]
+    assert not call(client, "declare_status", status="todo", description="Still to do")["created"]
     # "archived" sorts first, and the untouched entries are left as they were.
     assert main_file(remote, "status.yaml") == (
         "archived:\n  description: No longer maintained\n"
@@ -110,7 +110,7 @@ def test_remove_checks_the_remote_and_not_the_stale_mirror(client, env):
 
 def test_remove_status(client, env):
     assert "used by" in call(client, "remove_status", status="todo")["error"]
-    call(client, "set_status", status="archived", description="Old")
+    call(client, "declare_status", status="archived", description="Old")
     assert call(client, "remove_status", status="archived")["removed"] is True
     assert {s["status"] for s in call(client, "list_statuses")} == {"up-to-date", "todo"}
 

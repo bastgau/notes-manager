@@ -15,6 +15,7 @@ from notes_manager.config import Config
 log = logging.getLogger("notes-manager")
 
 MAX_PUSH_ATTEMPTS = 3
+MAX_DIFF_CHARS = 20_000
 # What git prints when the remote branch moved since our fetch.
 PUSH_RACE_RE = re.compile(r"rejected|non-fast-forward|fetch first")
 
@@ -72,25 +73,25 @@ class Repo:
         self.git("reset", "--quiet", "--hard", f"origin/{branch}")
         return True
 
-    def publish(self, message: str, mutate: Callable[[Path], None]) -> dict:
+    def publish(self, message: str, mutate: Callable[[Path], None], dry_run: bool = False) -> dict:
         """Commit the change made by ``mutate`` and push it straight to the main branch.
 
         The change is made on a throw-away worktree based on the freshly fetched tip,
         so the mirror is never touched here. When the branch moved between the fetch
-        and the push, the change is applied again on the new tip.
+        and the push, the change is applied again on the new tip. With ``dry_run`` the
+        change is only previewed: nothing is committed or pushed.
         """
         with self._write_lock:
             for attempt in range(1, MAX_PUSH_ATTEMPTS + 1):
                 try:
-                    sha = self._commit_and_push(message, mutate)
-                    break
+                    return self._apply(message, mutate, dry_run)
                 except GitError as exc:
-                    if attempt == MAX_PUSH_ATTEMPTS or not PUSH_RACE_RE.search(str(exc)):
+                    if dry_run or attempt == MAX_PUSH_ATTEMPTS or not PUSH_RACE_RE.search(str(exc)):
                         raise
                     log.info("push rejected (attempt %d), retrying on the new tip", attempt)
-        return {"branch": self.cfg.branch, "commit": sha[:12]}
+        raise AssertionError("unreachable")
 
-    def _commit_and_push(self, message: str, mutate: Callable[[Path], None]) -> str:
+    def _apply(self, message: str, mutate: Callable[[Path], None], dry_run: bool) -> dict:
         identity = (f"user.name={self.cfg.git_name}", f"user.email={self.cfg.git_email}")
         self.git("fetch", "--quiet", "origin", self.cfg.branch)
         tmp = Path(tempfile.mkdtemp(prefix="notes-wt-"))
@@ -101,10 +102,16 @@ class Repo:
             self.git("add", "-A", cwd=work)
             if not self.git("status", "--porcelain", cwd=work):
                 raise ValueError("nothing to change")
+            changes = self._numstat(work)
+            if dry_run:
+                diff = self.git("diff", "--cached", "--no-color", cwd=work)
+                if len(diff) > MAX_DIFF_CHARS:
+                    diff = diff[:MAX_DIFF_CHARS] + "\n... (diff truncated)"
+                return {"dry_run": True, "changes": changes, "diff": diff}
             self.git("commit", "--quiet", "-m", message, cwd=work, config=identity)
             sha = self.git("rev-parse", "HEAD", cwd=work)
             self.git("push", "--quiet", "origin", f"HEAD:refs/heads/{self.cfg.branch}", cwd=work)
-            return sha
+            return {"branch": self.cfg.branch, "commit": sha[:12], "changes": changes}
         finally:
             try:
                 self.git("worktree", "remove", "--force", str(work))
@@ -115,3 +122,12 @@ class Repo:
                 self.git("worktree", "prune")
             except GitError:
                 pass
+
+    def _numstat(self, work: Path) -> list[dict]:
+        """Lines added and removed per file in the staged change."""
+        out = []
+        for line in self.git("diff", "--cached", "--numstat", cwd=work).splitlines():
+            added, removed, path = line.split("\t", 2)
+            out.append({"path": path, "added": int(added) if added.isdigit() else None,
+                        "removed": int(removed) if removed.isdigit() else None})
+        return out

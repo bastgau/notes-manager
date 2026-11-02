@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from notes_manager.constants import UUID_RE
-from notes_manager.note import Note
+from notes_manager.note import Note, blob_revision
 from notes_manager.utils import normalize
 
 log = logging.getLogger("notes-manager")
@@ -54,7 +54,10 @@ class Snapshot:
                 if not UUID_RE.match(path.stem):
                     log.warning("ignoring %s: file name is not a lowercase uuid", path.name)
                     continue
-                notes[path.stem] = Note.parse(path.stem, path.read_text(encoding="utf-8"))
+                data = path.read_bytes()
+                note = Note.parse(path.stem, data.decode("utf-8", errors="replace"))
+                note.revision = blob_revision(data)
+                notes[path.stem] = note
         return cls(
             notes=notes,
             tags=load_vocabulary(root / "tags.yaml"),
