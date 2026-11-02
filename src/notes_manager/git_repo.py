@@ -4,7 +4,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 import threading
 from pathlib import Path
@@ -12,11 +11,13 @@ from typing import Callable
 
 from notes_manager.config import Config
 from notes_manager.constants import COMMIT_RE
+from notes_manager.processes import CommandTimeout, run_command
 
 log = logging.getLogger("notes-manager")
 
 MAX_PUSH_ATTEMPTS = 3
 MAX_DIFF_CHARS = 20_000
+GIT_TIMEOUT = 120
 # What git prints when the remote branch moved since our fetch.
 PUSH_RACE_RE = re.compile(r"rejected|non-fast-forward|fetch first")
 
@@ -38,19 +39,22 @@ class Repo:
         if cfg.ssh_key:
             env["GIT_SSH_COMMAND"] = (
                 f"ssh -i {cfg.ssh_key} -o IdentitiesOnly=yes -o BatchMode=yes "
-                f"-o UserKnownHostsFile={cfg.known_hosts} -o StrictHostKeyChecking=yes"
+                f"-o UserKnownHostsFile={cfg.known_hosts} -o StrictHostKeyChecking=yes "
+                "-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
             )
         self._env = env
 
     def git(self, *args: str, cwd: Path | None = None, config: tuple[str, ...] = (),
             strip: bool = True) -> str:
-        cmd = ["git", "-c", "safe.directory=*"]
+        # No background maintenance: a detached "git gc" would be an orphan of this process.
+        cmd = ["git", "-c", "safe.directory=*", "-c", "gc.auto=0", "-c", "maintenance.auto=false"]
         for item in config:
             cmd += ["-c", item]
         cmd += list(args)
-        proc = subprocess.run(
-            cmd, cwd=cwd or self.root, env=self._env, capture_output=True, text=True, timeout=120
-        )
+        try:
+            proc = run_command(cmd, cwd=cwd or self.root, env=self._env, timeout=GIT_TIMEOUT)
+        except CommandTimeout as exc:
+            raise GitError(f"git {args[0]} {exc}") from None
         if proc.returncode != 0:
             raise GitError(f"git {args[0]} failed: {proc.stderr.strip()[:500]}")
         return proc.stdout.strip() if strip else proc.stdout

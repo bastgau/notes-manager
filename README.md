@@ -81,7 +81,7 @@ To change a few lines, prefer `patch_doc` or `append_doc`: they cost a few dozen
 | Git access | A read-only deploy key is enough for reading. For write mode, use a deploy key with write access to the notes repository only. Do not require pull requests on the main branch, or the pushes of the write tools are refused. |
 | Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, each change is one commit pushed straight to the main branch, so the next read and the next edit of the same note see it. Every change stays in the Git history and can be reverted. No tool deletes a note; `remove_tag` and `remove_status` only drop vocabulary entries that no note uses. |
 | Input checks | Note ids must be lowercase uuids (no path traversal), tags and statuses must be declared, sizes are capped, and text that looks like a secret (GitHub tokens, private keys, AWS keys…) is refused. |
-| Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and process limits. |
+| Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and process limits. `tini` is process 1, so that the processes `git` and `ssh` leave orphaned are collected instead of piling up as zombies. |
 
 ## Configuration
 
@@ -152,7 +152,8 @@ src/notes_manager/
   snapshot.py     Snapshot: notes and vocabularies at a given commit
   store.py        Store: in-memory index and search
   git_repo.py     Repo: mirror sync and pushes to main
-  sync.py         periodic sync loop
+  sync.py         periodic sync loop (warns when zombie processes pile up)
+  processes.py    running commands without leaving processes behind; counting zombies
   auth.py         BearerAuth middleware
   server.py       FastMCP assembly and ASGI app
   validation.py   checks on notes submitted by write tools
