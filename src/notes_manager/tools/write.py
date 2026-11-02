@@ -1,4 +1,4 @@
-"""Write tools: registered only when NOTES_WRITE is enabled.
+"""The note writing tool: registered only when NOTES_WRITE is enabled.
 
 Changes are committed with the configured identity and pushed straight to the main
 branch, so the next read (and the next edit of the same note) sees them.
@@ -9,22 +9,15 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from notes_manager.constants import NAME_RE
 from notes_manager.git_repo import Repo
 from notes_manager.note import Note
-from notes_manager.rewrite import rewrite_tag_in_text, rewrite_tags_yaml
 from notes_manager.store import Store
-from notes_manager.utils import check_id, suggest
+from notes_manager.tools.common import refresh
+from notes_manager.utils import check_id
 from notes_manager.validation import validate_new_note
 
 
 def register_write_tools(mcp: FastMCP, store: Store, repo: Repo) -> None:
-    def finish(result: dict) -> dict:
-        """Refresh the mirror and the index so that the change is readable right away."""
-        if repo.sync():
-            store.reload()
-        return result
-
     @mcp.tool()
     def write_doc(title: str, description: str, tags: list[str], status: str, body: str,
                   id: str | None = None) -> dict:
@@ -57,40 +50,4 @@ def register_write_tools(mcp: FastMCP, store: Store, repo: Repo) -> None:
             target.write_text(text, encoding="utf-8")
 
         result = repo.publish(f'docs: {verb} note "{title[:60]}"', mutate)
-        return finish({"id": note_id, **result})
-
-    @mcp.tool()
-    def rename_tag(old: str, new: str) -> dict:
-        """Rename a tag everywhere, or merge it into an existing tag.
-
-        Rewrites tags.yaml and every note using the old tag, in one commit pushed to
-        the main branch. If `new` already exists, `old` is merged into it and removed
-        from tags.yaml.
-        """
-        snap = store.snapshot
-        if old not in snap.tags:
-            raise ValueError(f"unknown tag '{old}'.{suggest(old, snap.tags)}")
-        if not NAME_RE.match(new):
-            raise ValueError("new tag must be lowercase kebab-case")
-        if old == new:
-            raise ValueError("old and new are identical")
-        merge = new in snap.tags
-
-        def mutate(work: Path) -> None:
-            vocab = work / "tags.yaml"
-            vocab.write_text(
-                rewrite_tags_yaml(vocab.read_text(encoding="utf-8"), old, new, merge),
-                encoding="utf-8",
-            )
-            for path in (work / "notes").glob("*.md"):
-                text = path.read_text(encoding="utf-8")
-                updated = rewrite_tag_in_text(text, old, new)
-                if updated != text:
-                    path.write_text(updated, encoding="utf-8")
-
-        if merge:
-            verb, message = "merge", f"refactor: merge tag {old} into {new}"
-        else:
-            verb, message = "rename", f"refactor: rename tag {old} to {new}"
-        result = repo.publish(message, mutate)
-        return finish({"old": old, "new": new, "merged": merge, **result})
+        return refresh(store, repo, {"id": note_id, **result})

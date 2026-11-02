@@ -6,6 +6,8 @@ from notes_manager.constants import (
     MAX_DESCRIPTION,
     MAX_TAGS,
     MAX_TITLE,
+    MAX_VOCAB_DESCRIPTION,
+    NAME_RE,
 )
 from notes_manager.snapshot import Snapshot
 from notes_manager.utils import find_secret, suggest
@@ -31,3 +33,13 @@ def validate_new_note(snap: Snapshot, title: str, description: str, tags: list[s
     secret = find_secret(f"{title}\n{description}\n{body}")
     if secret:
         raise ValueError(f"refused: the text looks like it contains a secret ({secret})")
+
+
+def validate_vocab_entry(kind: str, name: str, description: str) -> None:
+    """Check a tag / status name and its description before writing them to the vocabulary."""
+    if not NAME_RE.match(name):
+        raise ValueError(f"{kind} must be lowercase kebab-case (letters, digits and single dashes)")
+    if not description.strip() or len(description) > MAX_VOCAB_DESCRIPTION or CONTROL_RE.search(description):
+        raise ValueError(f"description must be 1-{MAX_VOCAB_DESCRIPTION} characters on a single line")
+    if find_secret(description):
+        raise ValueError("refused: the description looks like it contains a secret")

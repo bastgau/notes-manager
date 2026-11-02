@@ -7,6 +7,7 @@ from notes_manager.config import Config
 from notes_manager.git_repo import Repo
 from notes_manager.store import Store
 from notes_manager.tools.read import register_read_tools
+from notes_manager.tools.vocabulary import register_vocabulary_tools
 from notes_manager.tools.write import register_write_tools
 
 INSTRUCTIONS = (
@@ -30,6 +31,7 @@ def create_server(cfg: Config, store: Store, repo: Repo | None) -> FastMCP:
     register_read_tools(mcp, store)
     if cfg.write and repo is not None:
         register_write_tools(mcp, store, repo)
+        register_vocabulary_tools(mcp, store, repo)
     return mcp
 
 

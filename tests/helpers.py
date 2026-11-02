@@ -23,10 +23,10 @@ unused:
   description: Nothing uses this
 """
 STATUS_YAML = """\
-up-to-date:
-  description: Fine
 todo:
   description: Not done
+up-to-date:
+  description: Fine
 """
 
 

@@ -45,7 +45,9 @@ updated: 2026-11-02
 | `list_tags()` / `list_statuses()` | Declared values with their description and note count |
 | `validate_notes()` | Missing front matter fields, undeclared tags or statuses |
 | `write_doc(title, description, tags, status, body, id?)` | Create or replace a note (write mode only) |
-| `rename_tag(old, new)` | Rename a tag everywhere, or merge it into an existing one (write mode only) |
+| `set_tag(tag, description)` / `set_status(status, description)` | Declare a tag or a status, or update its description; a new entry is inserted in alphabetical order (write mode only) |
+| `remove_tag(tag)` / `remove_status(status)` | Remove an entry that no note uses; refused otherwise (write mode only) |
+| `rename_tag(old, new)` / `rename_status(old, new)` | Rename a tag or a status everywhere, or merge it into an existing one (write mode only) |
 
 Note contents are untrusted data. The server instructions tell the AI never to follow instructions found in a
 note.
@@ -57,7 +59,7 @@ note.
 | Network | The compose file publishes no port. Only containers on `notes-network` can reach the server. |
 | Authentication | Every request needs `Authorization: Bearer <MCP_TOKEN>` (at least 32 characters, compared in constant time). Only `/healthz` is open. |
 | Git access | A read-only deploy key is enough for reading. For write mode, use a deploy key with write access to the notes repository only. Do not require pull requests on the main branch, or the pushes of the write tools are refused. |
-| Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, each change is one commit pushed straight to the main branch, so the next read and the next edit of the same note see it. Every change stays in the Git history and can be reverted. There is no delete tool. |
+| Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, each change is one commit pushed straight to the main branch, so the next read and the next edit of the same note see it. Every change stays in the Git history and can be reverted. No tool deletes a note; `remove_tag` and `remove_status` only drop vocabulary entries that no note uses. |
 | Input checks | Note ids must be lowercase uuids (no path traversal), tags and statuses must be declared, sizes are capped, and text that looks like a secret (GitHub tokens, private keys, AWS keys…) is refused. |
 | Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and process limits. |
 
@@ -133,10 +135,12 @@ src/notes_manager/
   auth.py         BearerAuth middleware
   server.py       FastMCP assembly and ASGI app
   validation.py   checks on notes submitted by write tools
-  rewrite.py      text rewriting for tag renames
+  rewrite.py      text editing of notes and of tags.yaml / status.yaml
   utils.py        normalize, find_secret, suggest, check_id
   constants.py    patterns and limits
   tools/read.py   read-only tools
-  tools/write.py  write tools (NOTES_WRITE=true)
+  tools/write.py  write_doc (NOTES_WRITE=true)
+  tools/vocabulary.py  set / remove / rename for tags.yaml and status.yaml (NOTES_WRITE=true)
+  tools/common.py     helpers shared by the write tools
 tests/            pytest suite
 ```

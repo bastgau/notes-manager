@@ -13,15 +13,18 @@ from notes_manager.utils import normalize
 log = logging.getLogger("notes-manager")
 
 
-def load_vocabulary(path: Path) -> dict[str, str]:
-    """Read tags.yaml / status.yaml into ``{name: description}``."""
-    if not path.is_file():
-        return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+def parse_vocabulary(text: str) -> dict[str, str]:
+    """Parse the text of tags.yaml / status.yaml into ``{name: description}``."""
+    data = yaml.safe_load(text) or {}
     out: dict[str, str] = {}
     for name, value in data.items():
         out[str(name)] = str(value.get("description", "")) if isinstance(value, dict) else ""
     return out
+
+
+def load_vocabulary(path: Path) -> dict[str, str]:
+    """Read tags.yaml / status.yaml from disk; a missing file is an empty vocabulary."""
+    return parse_vocabulary(path.read_text(encoding="utf-8")) if path.is_file() else {}
 
 
 @dataclass

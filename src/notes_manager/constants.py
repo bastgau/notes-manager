@@ -16,6 +16,7 @@ REQUIRED_FIELDS = ("title", "description", "tags", "status", "updated")
 
 MAX_TITLE = 200
 MAX_DESCRIPTION = 500
+MAX_VOCAB_DESCRIPTION = 200
 MAX_BODY_BYTES = 200_000
 MAX_TAGS = 8
 MAX_SEARCH_LIMIT = 50

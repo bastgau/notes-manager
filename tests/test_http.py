@@ -15,7 +15,8 @@ def test_auth(client):
 
 def test_tools_over_http(client):
     assert {"search", "get_doc", "list_docs", "list_by_tag", "list_tags", "list_statuses",
-            "validate_notes", "write_doc", "rename_tag"} <= tool_names(client)
+            "validate_notes", "write_doc", "rename_tag", "rename_status", "set_tag", "set_status",
+            "remove_tag", "remove_status"} <= tool_names(client)
     tags = {t["tag"]: t["count"] for t in call(client, "list_tags")}
     assert tags["docker"] == 2 and tags["unused"] == 0
     assert call(client, "get_doc", id=IDS[1])["title"] == "Home Assistant conventions"
@@ -34,4 +35,4 @@ def test_write_tools_absent_when_disabled(env):
     read_only = Config(**{**cfg.__dict__, "write": False})
     with TestClient(build_app(read_only, store, repo)) as c:
         names = tool_names(c)
-    assert "write_doc" not in names and "rename_tag" not in names and "search" in names
+    assert not names & {"write_doc", "rename_tag", "set_tag", "remove_status"} and "search" in names
