@@ -81,3 +81,19 @@ def insert_in_section(body: str, text: str, section: str | None) -> str:
     before, after = lines[:end], lines[end:]
     separator = [""] if after and after[0].strip() != "" else []
     return "\n".join(before + [""] + new_lines + separator + after)
+
+
+def section_text(lines: list[str], headings: list[Heading], position: int) -> str:
+    """The text of a section: its heading, its content and its sub-sections."""
+    start, end = headings[position].line, section_end(lines, headings, position)
+    return "\n".join(lines[start:end]).rstrip()
+
+
+def section_of_line(headings: list[Heading], line: int) -> Heading | None:
+    """The closest heading at or above ``line``, if any."""
+    found = None
+    for heading in headings:
+        if heading.line > line:
+            break
+        found = heading
+    return found

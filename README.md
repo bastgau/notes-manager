@@ -38,9 +38,10 @@ updated: 2026-11-02
 
 | Tool | Purpose |
 |---|---|
-| `search(query, tag?, status?, limit?)` | Ranked full-text search (title > tags > description > body), with a snippet |
-| `get_doc(id)` | A whole note: front matter fields and Markdown body |
-| `list_docs(tag?, status?)` | Note summaries, most recently updated first |
+| `search(query, tag?, status?, limit?)` | Ranked full-text search (title > tags > description > body). Each result has the best matching passage (`snippet`, cut at words, centred on the match), its `section` and `line`, and the fields it matched (`matched_in`) |
+| `get_doc(id, section?)` | A note: front matter fields, `revision` and Markdown body; with `section`, only that section (sub-sections included) |
+| `get_outline(id)` | The headings of a note with their level, line and size, without its text |
+| `list_docs(tag?, status?, updated_since?, updated_until?, sort?, limit?)` | Note summaries, most recently updated first; dates are `YYYY-MM-DD`, both inclusive; `sort` is `updated` or `title` |
 | `list_by_tag(tag)` | Notes carrying a tag; an unknown tag is rejected with suggestions |
 | `list_tags()` / `list_statuses()` | Declared values with their description and note count |
 | `validate_notes()` | Missing front matter fields, undeclared tags or statuses |
