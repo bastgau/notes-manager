@@ -26,7 +26,7 @@ RUN uv sync --locked --no-dev --no-editable
 FROM python:3.14-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+    && apt-get install -y --no-install-recommends git openssh-client ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
 
 # ssh refuses to run for a uid that has no passwd entry, so the runtime user is a real one
@@ -49,4 +49,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read() == b'ok' else 1)"]
 
+# tini is process 1: it collects the processes that git or ssh leave orphaned, which would
+# otherwise pile up as zombies until the container hits its process limit.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["notes-manager"]

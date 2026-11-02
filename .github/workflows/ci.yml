@@ -64,3 +64,36 @@ jobs:
             echo "ssh works for an unknown uid: the fixed uid is no longer needed"
             exit 1
           fi
+
+      # git and ssh leave orphans; without an init as process 1 they pile up as zombies until
+      # the container hits its process limit.
+      - name: An init collects orphaned processes
+        run: |
+          cat > /tmp/reap.py <<'PY'
+          import os, time
+          child = os.fork()
+          if child == 0:
+              if os.fork() == 0:
+                  time.sleep(0.3)
+                  os._exit(0)
+              os._exit(0)
+          os.waitpid(child, 0)
+          time.sleep(1.0)
+          zombies = 0
+          for pid in filter(str.isdigit, os.listdir("/proc")):
+              try:
+                  zombies += "\nState:\tZ" in open(f"/proc/{pid}/status").read()
+              except OSError:
+                  pass
+          print("zombies:", zombies)
+          raise SystemExit(1 if zombies else 0)
+          PY
+          docker run --rm notes-manager:ci tini --version
+          docker run -i --rm notes-manager:ci python - < /tmp/reap.py
+
+      - name: Without an init the same orphan stays a zombie (why tini is the entry point)
+        run: |
+          if docker run -i --rm --entrypoint python notes-manager:ci - < /tmp/reap.py; then
+            echo "no zombie without an init: tini may no longer be needed"
+            exit 1
+          fi
