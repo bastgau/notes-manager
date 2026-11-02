@@ -44,7 +44,10 @@ def register_read_tools(mcp: FastMCP, store: Store) -> None:
         `expected_revision`. Use get_outline to see the headings.
         """
         note = find_note(id)
-        result = {**note.summary(), "source": f"notes/{note.id}.md"}
+        snap = store.snapshot
+        links = lambda ids: [{"id": i, "title": snap.title_of(i)} for i in ids]  # noqa: E731
+        result = {**note.summary(), "source": f"notes/{note.id}.md", "related": links(note.related),
+                  "linked_from": links(snap.linked_from.get(note.id, []))}
         if section is None:
             return {**result, "body": note.body}
         lines = note.body.split("\n")
@@ -111,6 +114,13 @@ def register_read_tools(mcp: FastMCP, store: Store) -> None:
 
     @mcp.tool()
     def validate_notes() -> dict:
-        """Check every note: required front matter fields, declared tags and statuses."""
+        """Check every note and the vocabulary files.
+
+        `problems` are errors (they make `ok` false): missing front matter fields, undeclared
+        tags or statuses, a bad `updated` date, broken `related` links. `warnings` are things
+        worth tidying: declared tags or statuses no note uses, unsorted tags.yaml or
+        status.yaml, notes with the same title, over-long descriptions.
+        """
         problems = store.snapshot.problems()
-        return {"notes": len(store.snapshot.notes), "ok": not problems, "problems": problems}
+        return {"notes": len(store.snapshot.notes), "ok": not problems, "problems": problems,
+                "warnings": store.snapshot.warnings()}

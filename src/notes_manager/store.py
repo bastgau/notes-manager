@@ -4,6 +4,7 @@ import logging
 import re
 from pathlib import Path
 
+from notes_manager.constants import DATE_RE
 from notes_manager.markdown import parse_headings, section_of_line
 from notes_manager.note import Note
 from notes_manager.snapshot import Snapshot
@@ -12,7 +13,6 @@ from notes_manager.utils import normalize
 log = logging.getLogger("notes-manager")
 
 SNIPPET_CHARS = 240
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def token_forms(token: str) -> tuple[str, ...]:

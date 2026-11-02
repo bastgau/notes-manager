@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from notes_manager.config import Config
+from notes_manager.constants import COMMIT_RE
 
 log = logging.getLogger("notes-manager")
 
@@ -41,7 +42,8 @@ class Repo:
             )
         self._env = env
 
-    def git(self, *args: str, cwd: Path | None = None, config: tuple[str, ...] = ()) -> str:
+    def git(self, *args: str, cwd: Path | None = None, config: tuple[str, ...] = (),
+            strip: bool = True) -> str:
         cmd = ["git", "-c", "safe.directory=*"]
         for item in config:
             cmd += ["-c", item]
@@ -51,7 +53,7 @@ class Repo:
         )
         if proc.returncode != 0:
             raise GitError(f"git {args[0]} failed: {proc.stderr.strip()[:500]}")
-        return proc.stdout.strip()
+        return proc.stdout.strip() if strip else proc.stdout
 
     def ensure_clone(self) -> None:
         if (self.root / ".git").exists():
@@ -72,6 +74,51 @@ class Repo:
             return False
         self.git("reset", "--quiet", "--hard", f"origin/{branch}")
         return True
+
+    def history(self, rel_path: str, limit: int) -> list[dict]:
+        """The commits that changed a file, newest first, with the file revision each one produced."""
+        out = self.git("log", f"-n{limit}", "--no-abbrev", "--raw", "--format=%x1e%H%x1f%an%x1f%aI%x1f%s",
+                       f"origin/{self.cfg.branch}", "--", rel_path)
+        commits = []
+        for chunk in out.split("\x1e"):
+            if not chunk.strip():
+                continue
+            header, _, raw = chunk.partition("\n")
+            sha, author, date, subject = header.split("\x1f", 3)
+            revision = ""
+            for line in raw.splitlines():
+                if line.startswith(":"):
+                    revision = line.split()[3][:12]
+            commits.append({"commit": sha[:12], "date": date, "author": author, "subject": subject,
+                            "revision": revision})
+        return commits
+
+    def resolve_commit(self, ref: str) -> str:
+        """Full id of a commit that belongs to the history of the main branch."""
+        if not COMMIT_RE.match(ref.strip()):
+            raise ValueError("commit must be a hexadecimal id of 7 to 40 characters, "
+                             "as returned by get_doc_history")
+
+        def verify() -> str:
+            full = self.git("rev-parse", "--verify", "--quiet", f"{ref.strip()}^{{commit}}")
+            self.git("merge-base", "--is-ancestor", full, f"origin/{self.cfg.branch}")
+            return full
+
+        try:
+            return verify()
+        except GitError:
+            self.git("fetch", "--quiet", "origin", self.cfg.branch)  # the mirror may be late
+        try:
+            return verify()
+        except GitError:
+            raise ValueError("unknown commit, or not part of the history of the main branch") from None
+
+    def read_at(self, commit: str, rel_path: str) -> str:
+        """The text of a file as it was at a commit."""
+        try:
+            return self.git("show", f"{commit}:{rel_path}", strip=False)
+        except GitError:
+            raise ValueError("the note does not exist at that commit") from None
 
     def publish(self, message: str, mutate: Callable[[Path], None], dry_run: bool = False) -> dict:
         """Commit the change made by ``mutate`` and push it straight to the main branch.

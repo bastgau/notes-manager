@@ -4,6 +4,7 @@ from notes_manager.constants import (
     CONTROL_RE,
     MAX_BODY_BYTES,
     MAX_DESCRIPTION,
+    MAX_RELATED,
     MAX_TAGS,
     MAX_TITLE,
     MAX_VOCAB_DESCRIPTION,
@@ -56,3 +57,14 @@ def validate_vocab_entry(kind: str, name: str, description: str) -> None:
         raise ValueError(f"description must be 1-{MAX_VOCAB_DESCRIPTION} characters on a single line")
     if find_secret(description):
         raise ValueError("refused: the description looks like it contains a secret")
+
+
+def validate_related(snap: Snapshot, note_id: str, related: list[str]) -> None:
+    """The linked notes must exist, be distinct and not include the note itself."""
+    if len(related) > MAX_RELATED or len(set(related)) != len(related):
+        raise ValueError(f"related must be a list of at most {MAX_RELATED} distinct note ids")
+    for target in related:
+        if target == note_id:
+            raise ValueError("a note cannot be related to itself")
+        if target not in snap.notes:
+            raise ValueError(f"related note {target} does not exist (ids come from search or list_docs)")
