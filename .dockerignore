@@ -1,0 +1,12 @@
+.git
+.github
+.env
+deploy_key*
+data/
+tests/
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+*.md
+docker-compose.yml
