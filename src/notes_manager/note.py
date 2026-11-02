@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import yaml
 
-from notes_manager.constants import FRONT_MATTER_RE, REQUIRED_FIELDS
+from notes_manager.constants import FRONT_MATTER_RE, REQUIRED_FIELDS, UUID_RE
 
 
 def blob_revision(data: bytes) -> str:
@@ -38,6 +38,19 @@ def replace_meta_line(prefix: str, name: str, value: str) -> str:
     return re.sub(rf"^{re.escape(name)}: .*$", lambda _: f"{name}: {value}", prefix, count=1, flags=re.M)
 
 
+def set_related_line(prefix: str, related: list[str]) -> str:
+    """Set, change or remove the ``related:`` line of a front matter."""
+    present = re.search(r"^related: .*$", prefix, flags=re.M) is not None
+    value = f"[{', '.join(related)}]"
+    if present:
+        if related:
+            return replace_meta_line(prefix, "related", value)
+        return re.sub(r"^related: .*\n", "", prefix, count=1, flags=re.M)
+    if not related:
+        return prefix
+    return re.sub(r"^updated: ", lambda _: f"related: {value}\nupdated: ", prefix, count=1, flags=re.M)
+
+
 @dataclass
 class Note:
     id: str
@@ -46,6 +59,7 @@ class Note:
     tags: list[str] = field(default_factory=list)
     status: str = ""
     updated: str = ""
+    related: list[str] = field(default_factory=list)
     body: str = ""
     revision: str = ""
     problems: list[str] = field(default_factory=list)
@@ -72,7 +86,7 @@ class Note:
             return note
         try:
             meta = yaml.safe_load(match.group(1)) or {}
-        except yaml.YAMLError as exc:
+        except (yaml.YAMLError, ValueError) as exc:  # ValueError: an impossible date such as 2026-13-45
             note.problems.append(f"invalid front matter: {exc}")
             note.body = match.group(2)
             return note
@@ -90,19 +104,28 @@ class Note:
             note.problems.append("tags must be a list")
         note.status = str(meta.get("status") or "")
         note.updated = str(meta.get("updated") or "")
+        related = meta.get("related") or []
+        if isinstance(related, list):
+            note.related = [str(r) for r in related]
+            note.problems += [f"related: '{r}' is not a note id" for r in note.related if not UUID_RE.match(r)]
+        else:
+            note.problems.append("related must be a list of note ids")
         note.body = match.group(2).lstrip("\n")
         return note
 
     @staticmethod
-    def render(title: str, description: str, tags: list[str], status: str, body: str) -> str:
+    def render(title: str, description: str, tags: list[str], status: str, body: str,
+               related: list[str] | None = None) -> str:
         """Serialize a note to file text, stamping ``updated`` with today's UTC date."""
         updated = today()
+        links = f"related: [{', '.join(related)}]\n" if related else ""
         return (
             "---\n"
             f"title: {json.dumps(title, ensure_ascii=False)}\n"
             f"description: {json.dumps(description, ensure_ascii=False)}\n"
             f"tags: [{', '.join(tags)}]\n"
             f"status: {status}\n"
+            f"{links}"
             f"updated: {updated}\n"
             "---\n\n"
             f"{body.strip(chr(10))}\n"

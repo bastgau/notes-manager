@@ -20,6 +20,7 @@ title: "Short title"
 description: "One sentence that makes the note easy to find."
 tags: [docker, migration]
 status: todo
+related: [3f0c8e0a-9c1d-4b7e-8a52-1d2e3f4a5b6c]   # optional: ids of related notes
 updated: 2026-11-02
 ---
 
@@ -38,16 +39,21 @@ updated: 2026-11-02
 
 | Tool | Purpose |
 |---|---|
-| `search(query, tag?, status?, limit?)` | Ranked full-text search (title > tags > description > body), with a snippet |
-| `get_doc(id)` | A whole note: front matter fields and Markdown body |
-| `list_docs(tag?, status?)` | Note summaries, most recently updated first |
+| `search(query, tag?, status?, limit?)` | Ranked full-text search (title > tags > description > body). Each result has the best matching passage (`snippet`, cut at words, centred on the match), its `section` and `line`, and the fields it matched (`matched_in`) |
+| `get_doc(id, section?)` | A note: front matter fields, `revision`, the notes it is `related` to and those that link to it (`linked_from`), and the Markdown body; with `section`, only that section (sub-sections included) |
+| `get_outline(id)` | The headings of a note with their level, line and size, without its text |
+| `list_docs(tag?, status?, updated_since?, updated_until?, sort?, limit?)` | Note summaries, most recently updated first; dates are `YYYY-MM-DD`, both inclusive; `sort` is `updated` or `title` |
 | `list_by_tag(tag)` | Notes carrying a tag; an unknown tag is rejected with suggestions |
 | `list_tags()` / `list_statuses()` | Declared values with their description and note count |
-| `validate_notes()` | Missing front matter fields, undeclared tags or statuses |
+| `validate_notes()` | Errors (`problems`): missing fields, undeclared tags or statuses, bad dates, broken links. Warnings: unused tags or statuses, unsorted vocabulary files, duplicate titles |
+| `get_doc_history(id, limit?)` | The commits that changed a note, newest first, with the `revision` each produced |
+| `get_doc_version(id, commit)` | A note as it was at a commit, without changing anything |
 | `write_doc(title, description, tags, status, body, id?)` | Create a note, or replace a whole one (write mode only) |
 | `patch_doc(id, old, new, replace_all?)` | Replace an exact passage of the body, without resending the note (write mode only) |
 | `append_doc(id, text, section?)` | Add text at the end of a note or of one of its sections (write mode only) |
 | `set_doc_status(id, status)` / `set_doc_tags(id, tags)` | Change the metadata of a note, leaving its body alone (write mode only) |
+| `set_doc_related(id, related)` | Set the notes related to a note (their ids); an empty list removes the links (write mode only) |
+| `restore_doc(id, commit)` | Go back to an earlier version of a note, as a new commit; the history is kept (write mode only) |
 | `declare_tag(tag, description)` / `declare_status(status, description)` | Declare a tag or a status in `tags.yaml` / `status.yaml`, or update its description; a new entry is inserted in alphabetical order. No note is changed (write mode only) |
 | `remove_tag(tag)` / `remove_status(status)` | Remove an entry that no note uses; refused otherwise (write mode only) |
 | `rename_tag(old, new)` / `rename_status(old, new)` | Rename a tag or a status everywhere, or merge it into an existing one (write mode only) |
@@ -155,7 +161,8 @@ src/notes_manager/
   constants.py    patterns and limits
   tools/read.py   read-only tools
   markdown.py     headings and sections (code blocks are skipped)
-  tools/write.py  write_doc, patch_doc, append_doc, set_doc_status, set_doc_tags (NOTES_WRITE=true)
+  tools/history.py  get_doc_history, get_doc_version
+  tools/write.py  write_doc, patch_doc, append_doc, set_doc_status, set_doc_tags, set_doc_related, restore_doc (NOTES_WRITE=true)
   tools/vocabulary.py  set / remove / rename for tags.yaml and status.yaml (NOTES_WRITE=true)
   tools/common.py     helpers shared by the write tools
 tests/            pytest suite
