@@ -43,6 +43,10 @@ ENV PATH="/opt/venv/bin:$PATH" \
     NOTES_DIR=/data/notes \
     NOTES_KNOWN_HOSTS=/app/known_hosts
 
+# The commit this image was built from (the release workflow passes it); shown by /version.
+ARG GIT_COMMIT=unknown
+ENV NOTES_MANAGER_COMMIT=${GIT_COMMIT}
+
 USER notes
 EXPOSE 8000
 

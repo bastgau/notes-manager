@@ -33,7 +33,7 @@ updated: 2026-11-02
   `NOTES_SYNC_INTERVAL` seconds.
 - The front matter of every note is indexed in memory when the mirror changes. Search is case and accent
   insensitive, all words must match, and a trailing plural `s` is tolerated.
-- Transport is streamable HTTP (stateless) on `/mcp`. `/healthz` answers `ok` without authentication.
+- Transport is streamable HTTP (stateless) on `/mcp`. Two routes answer without authentication: `/healthz` (`ok`) and `/version`.
 
 ## Tools
 
@@ -45,6 +45,7 @@ updated: 2026-11-02
 | `list_docs(tag?, status?, updated_since?, updated_until?, sort?, limit?)` | Note summaries, most recently updated first; dates are `YYYY-MM-DD`, both inclusive; `sort` is `updated` or `title` |
 | `list_by_tag(tag)` | Notes carrying a tag; an unknown tag is rejected with suggestions |
 | `list_tags()` / `list_statuses()` | Declared values with their description and note count |
+| `server_info()` | The running server: `version` and `commit` of the build, whether write tools are enabled, notes indexed, the commit the mirror is at, uptime and `zombie_processes` (should stay at 0) |
 | `validate_notes()` | Errors (`problems`): missing fields, undeclared tags or statuses, bad dates, broken links. Warnings: unused tags or statuses, unsorted vocabulary files, duplicate titles |
 | `get_doc_history(id, limit?)` | The commits that changed a note, newest first, with the `revision` each produced |
 | `get_doc_version(id, commit)` | A note as it was at a commit, without changing anything |
@@ -127,6 +128,14 @@ The version is never written by hand: it comes from the **Git tag**.
   A pre-release (`vX.Y.Z-rc1`) does not move `latest`.
 - The Python package version is derived from the same tag with `hatch-vcs`; the release workflow passes it to
   the image build. Between two tags, a development checkout reports a version such as `1.0.1.dev3`.
+- The version is built into the image, and the commit it was built from too (`GIT_COMMIT`, set by the release workflow). To know what is running, without a token:
+
+  ```bash
+  curl http://notes-manager:8000/version
+  # {"name": "notes-manager", "version": "1.2.4", "commit": "56c04f1…"}
+  ```
+
+  Inside the container, `docker exec notes-manager python -c "import notes_manager; print(notes_manager.__version__)"` gives the same version. The `server_info` tool adds the health of the server.
 - After the first publication, set the package visibility to public in the GitHub package settings.
 
 ## Development
@@ -155,13 +164,15 @@ src/notes_manager/
   sync.py         periodic sync loop (warns when zombie processes pile up)
   processes.py    running commands without leaving processes behind; counting zombies
   auth.py         BearerAuth middleware
-  server.py       FastMCP assembly and ASGI app
+  server.py       FastMCP assembly and ASGI app (public routes: /healthz, /version)
+  buildinfo.py    version and commit of the build
   validation.py   checks on notes submitted by write tools
   rewrite.py      text editing of notes and of tags.yaml / status.yaml
   utils.py        normalize, find_secret, suggest, check_id
   constants.py    patterns and limits
   tools/read.py   read-only tools
   markdown.py     headings and sections (code blocks are skipped)
+  tools/info.py     server_info
   tools/history.py  get_doc_history, get_doc_version
   tools/write.py  write_doc, patch_doc, append_doc, set_doc_status, set_doc_tags, set_doc_related, restore_doc (NOTES_WRITE=true)
   tools/vocabulary.py  set / remove / rename for tags.yaml and status.yaml (NOTES_WRITE=true)
