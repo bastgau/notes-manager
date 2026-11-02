@@ -43,7 +43,24 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          push: false
+          load: true
           tags: notes-manager:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: The image starts as uid 10001 and git and ssh are available
+        run: |
+          test "$(docker run --rm notes-manager:ci id -u)" = "10001"
+          docker run --rm notes-manager:ci git --version
+          docker run --rm notes-manager:ci ssh -V
+
+      # ssh looks the current user up in /etc/passwd and exits when it is missing.
+      - name: ssh runs as the runtime user
+        run: docker run --rm --user 10001:10001 notes-manager:ci ssh -G github.com > /dev/null
+
+      - name: ssh does not run for a uid without a passwd entry (why the uid is fixed)
+        run: |
+          if docker run --rm --user 12345:12345 notes-manager:ci ssh -G github.com > /dev/null 2>&1; then
+            echo "ssh works for an unknown uid: the fixed uid is no longer needed"
+            exit 1
+          fi

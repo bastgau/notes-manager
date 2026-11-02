@@ -82,9 +82,10 @@ note.
 
 1. Create a deploy key for the notes repository (add write access only if you enable write mode):
    `ssh-keygen -t ed25519 -N "" -f deploy_key`, then add `deploy_key.pub` in the repository settings.
-2. Make the key readable by the container user only: `chmod 600 deploy_key`, owned by `NOTES_UID`.
+2. Make the key readable by the container user only: `chmod 600 deploy_key`, owned by uid `10001`.
 3. Copy `.env.example` to `.env` and fill it in. The notes directory must be a bind mount owned by
-   `NOTES_UID:NOTES_GID`.
+   uid `10001`, the user of the image (it has to be a fixed one: `ssh` refuses to run for a uid without a
+   passwd entry).
 4. `docker compose up -d`. The first start clones the repository.
 
 To update, run `docker compose pull && docker compose up -d`: the compose file follows the `latest` release.

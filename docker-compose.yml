@@ -4,8 +4,9 @@ services:
     image: ghcr.io/bastgau/notes-manager:${NOTES_MANAGER_VERSION:-latest}
     container_name: notes-manager
     restart: unless-stopped
-    # Must match the owner of NOTES_DATA_DIR and of the deploy key.
-    user: "${NOTES_UID:-1000}:${NOTES_GID:-1000}"
+    # The user of the image (see the Dockerfile). NOTES_DATA_DIR and the deploy key must belong to
+    # uid 10001 on the host.
+    user: "10001:10001"
     env_file: .env
     environment:
       NOTES_DIR: /data/notes
