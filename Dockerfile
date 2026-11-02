@@ -29,6 +29,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# ssh refuses to run for a uid that has no passwd entry, so the runtime user is a real one
+# with a fixed uid. Own the notes directory and the deploy key with uid 10001 on the host.
+RUN useradd --uid 10001 --user-group --no-create-home --home-dir /tmp --shell /usr/sbin/nologin notes
+
 COPY --from=builder /opt/venv /opt/venv
 COPY known_hosts /app/known_hosts
 
@@ -39,8 +43,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     NOTES_DIR=/data/notes \
     NOTES_KNOWN_HOSTS=/app/known_hosts
 
-# The compose file overrides the user so that it matches the owner of the notes clone.
-USER 10001:10001
+USER notes
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
