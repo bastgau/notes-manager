@@ -9,7 +9,7 @@ The notes live in a Git repository laid out as:
 The server keeps a read-only mirror of the main branch, indexes the front
 matter in memory and exposes search tools over streamable HTTP, protected by a
 bearer token. Write tools are disabled by default; when enabled they never
-touch the main branch: every change is pushed to an ``inbox/*`` branch.
+touch the mirror: every change is committed on a throw-away worktree and pushed to main.
 """
 
 from importlib.metadata import PackageNotFoundError, version

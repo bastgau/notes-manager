@@ -1,18 +1,22 @@
-"""Git operations: the read-only mirror and the inbox branches."""
+"""Git operations: the read-only mirror and the publication of changes on main."""
 
-import datetime
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
-import uuid
 from pathlib import Path
 from typing import Callable
 
 from notes_manager.config import Config
-from notes_manager.utils import normalize
+
+log = logging.getLogger("notes-manager")
+
+MAX_PUSH_ATTEMPTS = 3
+# What git prints when the remote branch moved since our fetch.
+PUSH_RACE_RE = re.compile(r"rejected|non-fast-forward|fetch first")
 
 
 class GitError(RuntimeError):
@@ -20,7 +24,7 @@ class GitError(RuntimeError):
 
 
 class Repo:
-    """Thin wrapper around the git CLI for the notes mirror and inbox branches."""
+    """Thin wrapper around the git CLI: mirror of the main branch and publication of changes."""
 
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
@@ -68,41 +72,46 @@ class Repo:
         self.git("reset", "--quiet", "--hard", f"origin/{branch}")
         return True
 
-    def compare_url(self, branch: str) -> str:
-        match = re.search(r"github\.com[:/](.+?)(?:\.git)?$", self.cfg.repo_url)
-        if not match:
-            return ""
-        return f"https://github.com/{match.group(1)}/compare/{self.cfg.branch}...{branch}"
+    def publish(self, message: str, mutate: Callable[[Path], None]) -> dict:
+        """Commit the change made by ``mutate`` and push it straight to the main branch.
 
-    def push_inbox(self, hint: str, message: str, mutate: Callable[[Path], None]) -> dict:
-        """Apply ``mutate`` on a throw-away worktree and push it to an inbox branch."""
-        slug = re.sub(r"[^a-z0-9]+", "-", normalize(hint)).strip("-")[:40] or "note"
-        stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-        branch = f"inbox/{stamp}-{slug}-{uuid.uuid4().hex[:4]}"
-        assert branch.startswith("inbox/")
-        identity = (f"user.name={self.cfg.git_name}", f"user.email={self.cfg.git_email}")
+        The change is made on a throw-away worktree based on the freshly fetched tip,
+        so the mirror is never touched here. When the branch moved between the fetch
+        and the push, the change is applied again on the new tip.
+        """
         with self._write_lock:
-            self.git("fetch", "--quiet", "origin", self.cfg.branch)
-            tmp = Path(tempfile.mkdtemp(prefix="notes-wt-"))
-            work = tmp / "wt"
+            for attempt in range(1, MAX_PUSH_ATTEMPTS + 1):
+                try:
+                    sha = self._commit_and_push(message, mutate)
+                    break
+                except GitError as exc:
+                    if attempt == MAX_PUSH_ATTEMPTS or not PUSH_RACE_RE.search(str(exc)):
+                        raise
+                    log.info("push rejected (attempt %d), retrying on the new tip", attempt)
+        return {"branch": self.cfg.branch, "commit": sha[:12]}
+
+    def _commit_and_push(self, message: str, mutate: Callable[[Path], None]) -> str:
+        identity = (f"user.name={self.cfg.git_name}", f"user.email={self.cfg.git_email}")
+        self.git("fetch", "--quiet", "origin", self.cfg.branch)
+        tmp = Path(tempfile.mkdtemp(prefix="notes-wt-"))
+        work = tmp / "wt"
+        try:
+            self.git("worktree", "add", "--quiet", "--detach", str(work), f"origin/{self.cfg.branch}")
+            mutate(work)
+            self.git("add", "-A", cwd=work)
+            if not self.git("status", "--porcelain", cwd=work):
+                raise ValueError("nothing to change")
+            self.git("commit", "--quiet", "-m", message, cwd=work, config=identity)
+            sha = self.git("rev-parse", "HEAD", cwd=work)
+            self.git("push", "--quiet", "origin", f"HEAD:refs/heads/{self.cfg.branch}", cwd=work)
+            return sha
+        finally:
             try:
-                self.git("worktree", "add", "--quiet", "--detach", str(work),
-                         f"origin/{self.cfg.branch}")
-                mutate(work)
-                self.git("add", "-A", cwd=work)
-                if not self.git("status", "--porcelain", cwd=work):
-                    raise ValueError("nothing to change")
-                self.git("commit", "--quiet", "-m", message, cwd=work, config=identity)
-                sha = self.git("rev-parse", "HEAD", cwd=work)
-                self.git("push", "--quiet", "origin", f"HEAD:refs/heads/{branch}", cwd=work)
-            finally:
-                try:
-                    self.git("worktree", "remove", "--force", str(work))
-                except GitError:
-                    pass
-                shutil.rmtree(tmp, ignore_errors=True)
-                try:
-                    self.git("worktree", "prune")
-                except GitError:
-                    pass
-        return {"branch": branch, "commit": sha[:12], "compare_url": self.compare_url(branch)}
+                self.git("worktree", "remove", "--force", str(work))
+            except GitError:
+                pass
+            shutil.rmtree(tmp, ignore_errors=True)
+            try:
+                self.git("worktree", "prune")
+            except GitError:
+                pass

@@ -1,6 +1,7 @@
 """Write tools: registered only when NOTES_WRITE is enabled.
 
-Every change goes to a new ``inbox/*`` branch, never to the main branch.
+Changes are committed with the configured identity and pushed straight to the main
+branch, so the next read (and the next edit of the same note) sees them.
 """
 
 import uuid
@@ -16,18 +17,22 @@ from notes_manager.store import Store
 from notes_manager.utils import check_id, suggest
 from notes_manager.validation import validate_new_note
 
-NEXT_STEP = "Review and merge the branch on GitHub; it is not on main yet."
-
 
 def register_write_tools(mcp: FastMCP, store: Store, repo: Repo) -> None:
+    def finish(result: dict) -> dict:
+        """Refresh the mirror and the index so that the change is readable right away."""
+        if repo.sync():
+            store.reload()
+        return result
+
     @mcp.tool()
     def write_doc(title: str, description: str, tags: list[str], status: str, body: str,
                   id: str | None = None) -> dict:
         """Create a note (no id) or replace one (with its id).
 
-        The change is committed to a new inbox/* branch and never to main: the
-        owner reviews and merges it. Tags and status must be declared (see
-        list_tags / list_statuses). The text is refused if it looks like a secret.
+        The change is committed and pushed straight to the main branch and is readable
+        immediately. Tags and status must be declared (see list_tags / list_statuses).
+        The text is refused if it looks like a secret. There is no way to delete a note.
         """
         snap = store.snapshot
         validate_new_note(snap, title, description, tags, status, body)
@@ -51,16 +56,16 @@ def register_write_tools(mcp: FastMCP, store: Store, repo: Repo) -> None:
             target.parent.mkdir(exist_ok=True)
             target.write_text(text, encoding="utf-8")
 
-        result = repo.push_inbox(title, f'docs: {verb} note "{title[:60]}"', mutate)
-        return {"id": note_id, **result, "next": NEXT_STEP}
+        result = repo.publish(f'docs: {verb} note "{title[:60]}"', mutate)
+        return finish({"id": note_id, **result})
 
     @mcp.tool()
     def rename_tag(old: str, new: str) -> dict:
         """Rename a tag everywhere, or merge it into an existing tag.
 
-        Rewrites tags.yaml and every note using the old tag, in one commit on a
-        new inbox/* branch (never main). If `new` already exists, `old` is merged
-        into it and removed from tags.yaml.
+        Rewrites tags.yaml and every note using the old tag, in one commit pushed to
+        the main branch. If `new` already exists, `old` is merged into it and removed
+        from tags.yaml.
         """
         snap = store.snapshot
         if old not in snap.tags:
@@ -87,5 +92,5 @@ def register_write_tools(mcp: FastMCP, store: Store, repo: Repo) -> None:
             verb, message = "merge", f"refactor: merge tag {old} into {new}"
         else:
             verb, message = "rename", f"refactor: rename tag {old} to {new}"
-        result = repo.push_inbox(f"{verb}-{old}-{new}", message, mutate)
-        return {"old": old, "new": new, "merged": merge, **result, "next": NEXT_STEP}
+        result = repo.publish(message, mutate)
+        return finish({"old": old, "new": new, "merged": merge, **result})

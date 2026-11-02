@@ -56,8 +56,8 @@ note.
 |---|---|
 | Network | The compose file publishes no port. Only containers on `notes-network` can reach the server. |
 | Authentication | Every request needs `Authorization: Bearer <MCP_TOKEN>` (at least 32 characters, compared in constant time). Only `/healthz` is open. |
-| Git access | A read-only deploy key is enough for reading. For write mode, use a deploy key with write access to the notes repository only, and protect the main branch on GitHub. |
-| Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, every change goes to a new `inbox/*` branch in a throw-away worktree, never to main, and the owner merges it. There is no delete tool. |
+| Git access | A read-only deploy key is enough for reading. For write mode, use a deploy key with write access to the notes repository only. Do not require pull requests on the main branch, or the pushes of the write tools are refused. |
+| Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, each change is one commit pushed straight to the main branch, so the next read and the next edit of the same note see it. Every change stays in the Git history and can be reverted. There is no delete tool. |
 | Input checks | Note ids must be lowercase uuids (no path traversal), tags and statuses must be declared, sizes are capped, and text that looks like a secret (GitHub tokens, private keys, AWS keys…) is refused. |
 | Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and process limits. |
 
@@ -67,7 +67,7 @@ note.
 |---|---|---|
 | `MCP_TOKEN` | required | Bearer token, at least 32 characters |
 | `NOTES_REPO_URL` | | Repository to clone when `NOTES_DIR` is empty |
-| `NOTES_BRANCH` | `main` | Branch to mirror and to base inbox branches on |
+| `NOTES_BRANCH` | `main` | Branch to mirror, and to push the write tools' commits to |
 | `NOTES_DIR` | `/data/notes` | Where the clone lives |
 | `NOTES_SYNC_INTERVAL` | `60` | Seconds between fetches (`0` disables) |
 | `NOTES_SSH_KEY` | | Path of the deploy key (SSH URLs) |
@@ -117,7 +117,7 @@ uv run notes-manager   # start the server (see Configuration)
 uv add <package>   # add a dependency and update uv.lock
 ```
 
-The tests build a throw-away bare repository, so they exercise the real sync and the inbox branches.
+The tests build a throw-away bare repository, so they exercise the real sync and the pushes to main (including a push that races with another one).
 
 ### Layout
 
@@ -128,7 +128,7 @@ src/notes_manager/
   note.py         Note: parsing and rendering of the front matter
   snapshot.py     Snapshot: notes and vocabularies at a given commit
   store.py        Store: in-memory index and search
-  git_repo.py     Repo: mirror sync and inbox branches
+  git_repo.py     Repo: mirror sync and pushes to main
   sync.py         periodic sync loop
   auth.py         BearerAuth middleware
   server.py       FastMCP assembly and ASGI app
