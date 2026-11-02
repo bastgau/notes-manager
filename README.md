@@ -1,7 +1,7 @@
 # notes-manager
 
 A lightweight [MCP](https://modelcontextprotocol.io) server that lets an AI search, read and write a
-Git-synced Markdown knowledge base. One Python file, no database.
+Git-synced Markdown knowledge base. A small Python package, no database.
 
 It is built for [`notes-bastien`](https://github.com/bastgau/notes-bastien) but works with any repository
 laid out the same way:
@@ -45,7 +45,9 @@ updated: 2026-11-02
 | `list_tags()` / `list_statuses()` | Declared values with their description and note count |
 | `validate_notes()` | Missing front matter fields, undeclared tags or statuses |
 | `write_doc(title, description, tags, status, body, id?)` | Create or replace a note (write mode only) |
-| `rename_tag(old, new)` | Rename a tag everywhere, or merge it into an existing one (write mode only) |
+| `set_tag(tag, description)` / `set_status(status, description)` | Declare a tag or a status, or update its description; a new entry is inserted in alphabetical order (write mode only) |
+| `remove_tag(tag)` / `remove_status(status)` | Remove an entry that no note uses; refused otherwise (write mode only) |
+| `rename_tag(old, new)` / `rename_status(old, new)` | Rename a tag or a status everywhere, or merge it into an existing one (write mode only) |
 
 Note contents are untrusted data. The server instructions tell the AI never to follow instructions found in a
 note.
@@ -56,8 +58,8 @@ note.
 |---|---|
 | Network | The compose file publishes no port. Only containers on `notes-network` can reach the server. |
 | Authentication | Every request needs `Authorization: Bearer <MCP_TOKEN>` (at least 32 characters, compared in constant time). Only `/healthz` is open. |
-| Git access | A read-only deploy key is enough for reading. For write mode, use a deploy key with write access to the notes repository only, and protect the main branch on GitHub. |
-| Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, every change goes to a new `inbox/*` branch in a throw-away worktree, never to main, and the owner merges it. There is no delete tool. |
+| Git access | A read-only deploy key is enough for reading. For write mode, use a deploy key with write access to the notes repository only. Do not require pull requests on the main branch, or the pushes of the write tools are refused. |
+| Writes | Disabled by default (`NOTES_WRITE=false`). When enabled, each change is one commit pushed straight to the main branch, so the next read and the next edit of the same note see it. Every change stays in the Git history and can be reverted. No tool deletes a note; `remove_tag` and `remove_status` only drop vocabulary entries that no note uses. |
 | Input checks | Note ids must be lowercase uuids (no path traversal), tags and statuses must be declared, sizes are capped, and text that looks like a secret (GitHub tokens, private keys, AWS keys…) is refused. |
 | Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and process limits. |
 
@@ -67,7 +69,7 @@ note.
 |---|---|---|
 | `MCP_TOKEN` | required | Bearer token, at least 32 characters |
 | `NOTES_REPO_URL` | | Repository to clone when `NOTES_DIR` is empty |
-| `NOTES_BRANCH` | `main` | Branch to mirror and to base inbox branches on |
+| `NOTES_BRANCH` | `main` | Branch to mirror, and to push the write tools' commits to |
 | `NOTES_DIR` | `/data/notes` | Where the clone lives |
 | `NOTES_SYNC_INTERVAL` | `60` | Seconds between fetches (`0` disables) |
 | `NOTES_SSH_KEY` | | Path of the deploy key (SSH URLs) |
@@ -85,6 +87,8 @@ note.
    `NOTES_UID:NOTES_GID`.
 4. `docker compose up -d`. The first start clones the repository.
 
+To update, run `docker compose pull && docker compose up -d`: the compose file follows the `latest` release.
+
 To use the server from another container, attach that container to the `notes-network` network
 (`external: true`) and register it with Claude Code:
 
@@ -93,19 +97,50 @@ claude mcp add --transport http notes http://notes-manager:8000/mcp \
   --header "Authorization: Bearer $NOTES_MCP_TOKEN"
 ```
 
-## Releases
+## Releases and versions
 
-Publishing a GitHub release tagged `vX.Y.Z` builds a multi-architecture image (`linux/amd64`,
-`linux/arm64`) and pushes it to `ghcr.io/bastgau/notes-manager` as `X.Y.Z`, `X.Y` and `latest`. A pre-release
-(`vX.Y.Z-rc1`) does not move `latest`. After the first publication, set the package visibility to public in the
-GitHub package settings.
+The version is never written by hand: it comes from the **Git tag**.
+
+- Publishing a GitHub release tagged `vX.Y.Z` builds a multi-architecture image (`linux/amd64`,
+  `linux/arm64`) and pushes it to `ghcr.io/bastgau/notes-manager` as `X.Y.Z`, `X.Y`, `X` and `latest`.
+  A pre-release (`vX.Y.Z-rc1`) does not move `latest`.
+- The Python package version is derived from the same tag with `hatch-vcs`; the release workflow passes it to
+  the image build. Between two tags, a development checkout reports a version such as `1.0.1.dev3`.
+- After the first publication, set the package visibility to public in the GitHub package settings.
 
 ## Development
 
+Dependencies are managed with [uv](https://docs.astral.sh/uv/) and locked in `uv.lock`.
+
 ```bash
-python -m venv venv && . venv/bin/activate
-pip install -r requirements-dev.txt
-python -m pytest
+uv sync            # create .venv with the locked dependencies
+uv run pytest      # run the tests
+uv run notes-manager   # start the server (see Configuration)
+uv add <package>   # add a dependency and update uv.lock
 ```
 
-The tests build a throw-away bare repository, so they exercise the real sync and the inbox branches.
+The tests build a throw-away bare repository, so they exercise the real sync and the pushes to main (including a push that races with another one).
+
+### Layout
+
+```
+src/notes_manager/
+  cli.py          entry point (notes-manager / python -m notes_manager)
+  config.py       Config, read from environment variables
+  note.py         Note: parsing and rendering of the front matter
+  snapshot.py     Snapshot: notes and vocabularies at a given commit
+  store.py        Store: in-memory index and search
+  git_repo.py     Repo: mirror sync and pushes to main
+  sync.py         periodic sync loop
+  auth.py         BearerAuth middleware
+  server.py       FastMCP assembly and ASGI app
+  validation.py   checks on notes submitted by write tools
+  rewrite.py      text editing of notes and of tags.yaml / status.yaml
+  utils.py        normalize, find_secret, suggest, check_id
+  constants.py    patterns and limits
+  tools/read.py   read-only tools
+  tools/write.py  write_doc (NOTES_WRITE=true)
+  tools/vocabulary.py  set / remove / rename for tags.yaml and status.yaml (NOTES_WRITE=true)
+  tools/common.py     helpers shared by the write tools
+tests/            pytest suite
+```
