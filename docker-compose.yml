@@ -1,0 +1,31 @@
+services:
+  notes-manager:
+    image: ghcr.io/bastgau/notes-manager:${NOTES_MANAGER_VERSION:?set NOTES_MANAGER_VERSION in .env}
+    container_name: notes-manager
+    restart: unless-stopped
+    # Must match the owner of NOTES_DATA_DIR and of the deploy key.
+    user: "${NOTES_UID:-1000}:${NOTES_GID:-1000}"
+    env_file: .env
+    environment:
+      NOTES_DIR: /data/notes
+      NOTES_SSH_KEY: /run/secrets/deploy_key
+    volumes:
+      # Bind mounts only: no named volume for the notes clone.
+      - ${NOTES_DATA_DIR:-./data/notes}:/data/notes
+      - ${NOTES_DEPLOY_KEY:-./deploy_key}:/run/secrets/deploy_key:ro
+    # No published port: only containers on notes-network can reach the server.
+    networks:
+      - notes-network
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 100
+
+networks:
+  notes-network:
+    name: notes-network
