@@ -1,6 +1,7 @@
 name: Publish image
 
 # Runs when a GitHub release is published (tag format: v1.2.3).
+# The version is never written by hand: it comes from the tag of the release.
 on:
   release:
     types: [published]
@@ -25,7 +26,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # v1.2.3 -> 1.2.3, 1.2 and latest. A pre-release (v1.2.3-rc1) does not move latest.
+      # v1.2.3 -> 1.2.3, 1.2, 1 and latest. A pre-release (v1.2.3-rc1) does not move latest.
       - id: meta
         uses: docker/metadata-action@v6
         with:
@@ -33,12 +34,15 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
 
       - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

@@ -1,0 +1,34 @@
+[project]
+name = "notes-manager"
+# The version comes from the Git tag (vX.Y.Z), never from this file.
+dynamic = ["version"]
+description = "Lightweight MCP server that lets AI search, read and write a Git-synced Markdown knowledge base."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "mcp>=1.30,<2",
+    "pyyaml>=6,<7",
+]
+
+[project.scripts]
+notes-manager = "notes_manager.cli:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28",
+    "pytest>=9",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/notes_manager"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:Using .httpx. with .starlette.testclient. is deprecated"]

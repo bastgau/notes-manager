@@ -1,6 +1,7 @@
 services:
   notes-manager:
-    image: ghcr.io/bastgau/notes-manager:${NOTES_MANAGER_VERSION:?set NOTES_MANAGER_VERSION in .env}
+    # Follows the latest release. Set NOTES_MANAGER_VERSION (for example 1 or 1.0.0) only to pin it.
+    image: ghcr.io/bastgau/notes-manager:${NOTES_MANAGER_VERSION:-latest}
     container_name: notes-manager
     restart: unless-stopped
     # Must match the owner of NOTES_DATA_DIR and of the deploy key.

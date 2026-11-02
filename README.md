@@ -1,7 +1,7 @@
 # notes-manager
 
 A lightweight [MCP](https://modelcontextprotocol.io) server that lets an AI search, read and write a
-Git-synced Markdown knowledge base. One Python file, no database.
+Git-synced Markdown knowledge base. A small Python package, no database.
 
 It is built for [`notes-bastien`](https://github.com/bastgau/notes-bastien) but works with any repository
 laid out the same way:
@@ -85,6 +85,8 @@ note.
    `NOTES_UID:NOTES_GID`.
 4. `docker compose up -d`. The first start clones the repository.
 
+To update, run `docker compose pull && docker compose up -d`: the compose file follows the `latest` release.
+
 To use the server from another container, attach that container to the `notes-network` network
 (`external: true`) and register it with Claude Code:
 
@@ -93,19 +95,48 @@ claude mcp add --transport http notes http://notes-manager:8000/mcp \
   --header "Authorization: Bearer $NOTES_MCP_TOKEN"
 ```
 
-## Releases
+## Releases and versions
 
-Publishing a GitHub release tagged `vX.Y.Z` builds a multi-architecture image (`linux/amd64`,
-`linux/arm64`) and pushes it to `ghcr.io/bastgau/notes-manager` as `X.Y.Z`, `X.Y` and `latest`. A pre-release
-(`vX.Y.Z-rc1`) does not move `latest`. After the first publication, set the package visibility to public in the
-GitHub package settings.
+The version is never written by hand: it comes from the **Git tag**.
+
+- Publishing a GitHub release tagged `vX.Y.Z` builds a multi-architecture image (`linux/amd64`,
+  `linux/arm64`) and pushes it to `ghcr.io/bastgau/notes-manager` as `X.Y.Z`, `X.Y`, `X` and `latest`.
+  A pre-release (`vX.Y.Z-rc1`) does not move `latest`.
+- The Python package version is derived from the same tag with `hatch-vcs`; the release workflow passes it to
+  the image build. Between two tags, a development checkout reports a version such as `1.0.1.dev3`.
+- After the first publication, set the package visibility to public in the GitHub package settings.
 
 ## Development
 
+Dependencies are managed with [uv](https://docs.astral.sh/uv/) and locked in `uv.lock`.
+
 ```bash
-python -m venv venv && . venv/bin/activate
-pip install -r requirements-dev.txt
-python -m pytest
+uv sync            # create .venv with the locked dependencies
+uv run pytest      # run the tests
+uv run notes-manager   # start the server (see Configuration)
+uv add <package>   # add a dependency and update uv.lock
 ```
 
 The tests build a throw-away bare repository, so they exercise the real sync and the inbox branches.
+
+### Layout
+
+```
+src/notes_manager/
+  cli.py          entry point (notes-manager / python -m notes_manager)
+  config.py       Config, read from environment variables
+  note.py         Note: parsing and rendering of the front matter
+  snapshot.py     Snapshot: notes and vocabularies at a given commit
+  store.py        Store: in-memory index and search
+  git_repo.py     Repo: mirror sync and inbox branches
+  sync.py         periodic sync loop
+  auth.py         BearerAuth middleware
+  server.py       FastMCP assembly and ASGI app
+  validation.py   checks on notes submitted by write tools
+  rewrite.py      text rewriting for tag renames
+  utils.py        normalize, find_secret, suggest, check_id
+  constants.py    patterns and limits
+  tools/read.py   read-only tools
+  tools/write.py  write tools (NOTES_WRITE=true)
+tests/            pytest suite
+```
