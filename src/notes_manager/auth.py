@@ -5,19 +5,22 @@ import hmac
 
 
 class BearerAuth:
-    """Every request needs the bearer token, except GET /healthz."""
+    """Every request needs the bearer token, except the public routes (/healthz, and /version)."""
 
-    def __init__(self, app, token: str) -> None:
+    def __init__(self, app, token: str, public: dict[str, tuple[bytes, bytes]] | None = None) -> None:
         self.app = app
         self._digest = hashlib.sha256(token.encode()).digest()
+        # path -> (body, content type): answered without authentication
+        self._public = {"/healthz": (b"ok", b"text/plain"), **(public or {})}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
             return await self.app(scope, receive, send)
         if scope["type"] != "http":
             return
-        if scope["path"] == "/healthz":
-            return await self._respond(send, 200, b"ok", b"text/plain")
+        if scope["path"] in self._public:
+            body, content_type = self._public[scope["path"]]
+            return await self._respond(send, 200, body, content_type)
         header = dict(scope["headers"]).get(b"authorization", b"").decode("latin-1")
         scheme, _, credential = header.partition(" ")
         given = hashlib.sha256(credential.strip().encode()).digest()

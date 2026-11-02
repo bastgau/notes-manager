@@ -44,9 +44,18 @@ jobs:
         with:
           context: .
           load: true
+          build-args: |
+            VERSION=9.9.9
+            GIT_COMMIT=abc1234
           tags: notes-manager:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The release workflow passes these two build arguments; /version reports them.
+      - name: The version and the commit of the build are inside the image
+        run: |
+          test "$(docker run --rm notes-manager:ci python -c 'import notes_manager; print(notes_manager.__version__)')" = "9.9.9"
+          test "$(docker run --rm notes-manager:ci printenv NOTES_MANAGER_COMMIT)" = "abc1234"
 
       - name: The image starts as uid 10001 and git and ssh are available
         run: |

@@ -1,12 +1,16 @@
 """Assembly of the MCP server and of the authenticated ASGI app."""
 
+import json
+
 from mcp.server.fastmcp import FastMCP
 
 from notes_manager.auth import BearerAuth
+from notes_manager.buildinfo import build_info
 from notes_manager.config import Config
 from notes_manager.git_repo import Repo
 from notes_manager.store import Store
 from notes_manager.tools.history import register_history_tools
+from notes_manager.tools.info import register_info_tools
 from notes_manager.tools.read import register_read_tools
 from notes_manager.tools.vocabulary import register_vocabulary_tools
 from notes_manager.tools.write import register_write_tools
@@ -30,6 +34,7 @@ def create_server(cfg: Config, store: Store, repo: Repo | None) -> FastMCP:
         json_response=True,
     )
     register_read_tools(mcp, store)
+    register_info_tools(mcp, cfg, store, repo)
     if repo is not None:
         register_history_tools(mcp, store, repo)
     if cfg.write and repo is not None:
@@ -39,5 +44,7 @@ def create_server(cfg: Config, store: Store, repo: Repo | None) -> FastMCP:
 
 
 def build_app(cfg: Config, store: Store, repo: Repo | None):
-    """The streamable HTTP app, behind the bearer-token middleware."""
-    return BearerAuth(create_server(cfg, store, repo).streamable_http_app(), cfg.token)
+    """The streamable HTTP app, behind the bearer-token middleware (only /healthz and /version are open)."""
+    version = (json.dumps(build_info()).encode(), b"application/json")
+    return BearerAuth(create_server(cfg, store, repo).streamable_http_app(), cfg.token,
+                      public={"/version": version})
