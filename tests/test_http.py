@@ -15,7 +15,7 @@ def test_auth(client):
 
 def test_tools_over_http(client):
     assert {"search", "get_doc", "list_docs", "list_by_tag", "list_tags", "list_statuses",
-            "validate_notes", "write_doc", "rename_tag", "rename_status", "set_tag", "set_status",
+            "validate_notes", "write_doc", "rename_tag", "rename_status", "declare_tag", "declare_status",
             "remove_tag", "remove_status"} <= tool_names(client)
     tags = {t["tag"]: t["count"] for t in call(client, "list_tags")}
     assert tags["docker"] == 2 and tags["unused"] == 0
@@ -35,4 +35,4 @@ def test_write_tools_absent_when_disabled(env):
     read_only = Config(**{**cfg.__dict__, "write": False})
     with TestClient(build_app(read_only, store, repo)) as c:
         names = tool_names(c)
-    assert not names & {"write_doc", "rename_tag", "set_tag", "remove_status"} and "search" in names
+    assert not names & {"write_doc", "rename_tag", "declare_tag", "remove_status"} and "search" in names

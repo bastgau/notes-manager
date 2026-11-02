@@ -22,7 +22,7 @@ from notes_manager.rewrite import (
 )
 from notes_manager.snapshot import Snapshot, parse_vocabulary
 from notes_manager.store import Store
-from notes_manager.tools.common import refresh
+from notes_manager.tools.common import finish
 from notes_manager.utils import suggest
 from notes_manager.validation import validate_vocab_entry
 
@@ -57,7 +57,8 @@ def _require_declared(vocab: Vocabulary, store: Store, name: str) -> None:
         raise ValueError(f"unknown {vocab.kind} '{name}'.{suggest(name, declared)}")
 
 
-def set_entry(vocab: Vocabulary, store: Store, repo: Repo, name: str, description: str) -> dict:
+def set_entry(vocab: Vocabulary, store: Store, repo: Repo, name: str, description: str,
+              dry_run: bool = False) -> dict:
     validate_vocab_entry(vocab.kind, name, description)
     existed = name in vocab.declared(store.snapshot)
 
@@ -70,11 +71,11 @@ def set_entry(vocab: Vocabulary, store: Store, repo: Repo, name: str, descriptio
         path.write_text(after, encoding="utf-8")
 
     verb = "describe" if existed else "declare"
-    result = repo.publish(f"docs: {verb} {vocab.kind} {name}", mutate)
-    return refresh(store, repo, {vocab.kind: name, "created": not existed, **result})
+    result = repo.publish(f"docs: {verb} {vocab.kind} {name}", mutate, dry_run=dry_run)
+    return finish(store, repo, {vocab.kind: name, "created": not existed, **result}, dry_run)
 
 
-def remove_entry(vocab: Vocabulary, store: Store, repo: Repo, name: str) -> dict:
+def remove_entry(vocab: Vocabulary, store: Store, repo: Repo, name: str, dry_run: bool = False) -> dict:
     _require_declared(vocab, store, name)
 
     def mutate(work: Path) -> None:
@@ -86,11 +87,12 @@ def remove_entry(vocab: Vocabulary, store: Store, repo: Repo, name: str) -> dict
         path = work / vocab.file
         path.write_text(drop_vocab_entry(path.read_text(encoding="utf-8"), name), encoding="utf-8")
 
-    result = repo.publish(f"docs: remove unused {vocab.kind} {name}", mutate)
-    return refresh(store, repo, {vocab.kind: name, "removed": True, **result})
+    result = repo.publish(f"docs: remove unused {vocab.kind} {name}", mutate, dry_run=dry_run)
+    return finish(store, repo, {vocab.kind: name, "removed": True, **result}, dry_run)
 
 
-def rename_entry(vocab: Vocabulary, store: Store, repo: Repo, old: str, new: str) -> dict:
+def rename_entry(vocab: Vocabulary, store: Store, repo: Repo, old: str, new: str,
+                 dry_run: bool = False) -> dict:
     _require_declared(vocab, store, old)
     if not NAME_RE.match(new):
         raise ValueError(f"new {vocab.kind} must be lowercase kebab-case")
@@ -111,53 +113,58 @@ def rename_entry(vocab: Vocabulary, store: Store, repo: Repo, old: str, new: str
     verb = "merge" if merge else "rename"
     message = (f"refactor: merge {vocab.kind} {old} into {new}" if merge
                else f"refactor: rename {vocab.kind} {old} to {new}")
-    result = repo.publish(message, mutate)
-    return refresh(store, repo, {"old": old, "new": new, "merged": merge, **result})
+    result = repo.publish(message, mutate, dry_run=dry_run)
+    return finish(store, repo, {"old": old, "new": new, "merged": merge, **result}, dry_run)
 
 
 def register_vocabulary_tools(mcp: FastMCP, store: Store, repo: Repo) -> None:
     @mcp.tool()
-    def set_tag(tag: str, description: str) -> dict:
+    def declare_tag(tag: str, description: str, dry_run: bool = False) -> dict:
         """Declare a tag in tags.yaml, or update the description of an existing one.
 
-        The tag must be lowercase kebab-case, singular and in English. The change is
-        pushed to the main branch and can be used by write_doc right away.
+        This does not change any note (use set_doc_tags for that). The tag must be
+        lowercase kebab-case, singular and in English; a new entry is inserted in
+        alphabetical order. The change is pushed to the main branch and can be used
+        by write_doc right away. With `dry_run` the diff is returned and nothing is written.
         """
-        return set_entry(TAGS, store, repo, tag, description)
+        return set_entry(TAGS, store, repo, tag, description, dry_run)
 
     @mcp.tool()
-    def set_status(status: str, description: str) -> dict:
-        """Declare a status in status.yaml, or update the description of an existing one."""
-        return set_entry(STATUSES, store, repo, status, description)
+    def declare_status(status: str, description: str, dry_run: bool = False) -> dict:
+        """Declare a status in status.yaml, or update the description of an existing one.
+
+        This does not change any note (use set_doc_status for that).
+        """
+        return set_entry(STATUSES, store, repo, status, description, dry_run)
 
     @mcp.tool()
-    def remove_tag(tag: str) -> dict:
+    def remove_tag(tag: str, dry_run: bool = False) -> dict:
         """Remove a tag from tags.yaml. Refused while any note still uses it.
 
         Use rename_tag to merge a tag that is in use into another one.
         """
-        return remove_entry(TAGS, store, repo, tag)
+        return remove_entry(TAGS, store, repo, tag, dry_run)
 
     @mcp.tool()
-    def remove_status(status: str) -> dict:
+    def remove_status(status: str, dry_run: bool = False) -> dict:
         """Remove a status from status.yaml. Refused while any note still uses it."""
-        return remove_entry(STATUSES, store, repo, status)
+        return remove_entry(STATUSES, store, repo, status, dry_run)
 
     @mcp.tool()
-    def rename_tag(old: str, new: str) -> dict:
+    def rename_tag(old: str, new: str, dry_run: bool = False) -> dict:
         """Rename a tag everywhere, or merge it into an existing tag.
 
         Rewrites tags.yaml and every note using the old tag, in one commit pushed to
         the main branch. If `new` already exists, `old` is merged into it and removed
         from tags.yaml.
         """
-        return rename_entry(TAGS, store, repo, old, new)
+        return rename_entry(TAGS, store, repo, old, new, dry_run)
 
     @mcp.tool()
-    def rename_status(old: str, new: str) -> dict:
+    def rename_status(old: str, new: str, dry_run: bool = False) -> dict:
         """Rename a status everywhere, or merge it into an existing status.
 
         Rewrites status.yaml and every note using the old status, in one commit pushed
         to the main branch. If `new` already exists, `old` is merged into it.
         """
-        return rename_entry(STATUSES, store, repo, old, new)
+        return rename_entry(STATUSES, store, repo, old, new, dry_run)

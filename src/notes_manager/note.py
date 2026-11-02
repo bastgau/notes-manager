@@ -1,12 +1,41 @@
 """A single note: parsing and serialization of its front matter."""
 
 import datetime
+import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 
 import yaml
 
 from notes_manager.constants import FRONT_MATTER_RE, REQUIRED_FIELDS
+
+
+def blob_revision(data: bytes) -> str:
+    """Git blob hash of a file's bytes, shortened: it changes if and only if the file changes."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()[:12]
+
+
+def split_note(text: str) -> tuple[str, str]:
+    """Split a note file into (front matter including its delimiters, body)."""
+    match = FRONT_MATTER_RE.match(text)
+    if not match:
+        raise ValueError("the note has no front matter")
+    return text[: match.start(2)], match.group(2)
+
+
+def today() -> str:
+    return datetime.datetime.now(datetime.UTC).date().isoformat()
+
+
+def bump_updated(prefix: str) -> str:
+    """Set the ``updated`` field of a front matter to today's UTC date."""
+    return re.sub(r"^updated: .*$", f"updated: {today()}", prefix, count=1, flags=re.M)
+
+
+def replace_meta_line(prefix: str, name: str, value: str) -> str:
+    """Replace the ``name: ...`` line of a front matter."""
+    return re.sub(rf"^{re.escape(name)}: .*$", lambda _: f"{name}: {value}", prefix, count=1, flags=re.M)
 
 
 @dataclass
@@ -18,11 +47,13 @@ class Note:
     status: str = ""
     updated: str = ""
     body: str = ""
+    revision: str = ""
     problems: list[str] = field(default_factory=list)
 
     def summary(self) -> dict:
         return {
             "id": self.id,
+            "revision": self.revision,
             "title": self.title,
             "description": self.description,
             "tags": self.tags,
@@ -65,7 +96,7 @@ class Note:
     @staticmethod
     def render(title: str, description: str, tags: list[str], status: str, body: str) -> str:
         """Serialize a note to file text, stamping ``updated`` with today's UTC date."""
-        updated = datetime.datetime.now(datetime.UTC).date().isoformat()
+        updated = today()
         return (
             "---\n"
             f"title: {json.dumps(title, ensure_ascii=False)}\n"

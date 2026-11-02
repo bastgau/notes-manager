@@ -44,13 +44,27 @@ updated: 2026-11-02
 | `list_by_tag(tag)` | Notes carrying a tag; an unknown tag is rejected with suggestions |
 | `list_tags()` / `list_statuses()` | Declared values with their description and note count |
 | `validate_notes()` | Missing front matter fields, undeclared tags or statuses |
-| `write_doc(title, description, tags, status, body, id?)` | Create or replace a note (write mode only) |
-| `set_tag(tag, description)` / `set_status(status, description)` | Declare a tag or a status, or update its description; a new entry is inserted in alphabetical order (write mode only) |
+| `write_doc(title, description, tags, status, body, id?)` | Create a note, or replace a whole one (write mode only) |
+| `patch_doc(id, old, new, replace_all?)` | Replace an exact passage of the body, without resending the note (write mode only) |
+| `append_doc(id, text, section?)` | Add text at the end of a note or of one of its sections (write mode only) |
+| `set_doc_status(id, status)` / `set_doc_tags(id, tags)` | Change the metadata of a note, leaving its body alone (write mode only) |
+| `declare_tag(tag, description)` / `declare_status(status, description)` | Declare a tag or a status in `tags.yaml` / `status.yaml`, or update its description; a new entry is inserted in alphabetical order. No note is changed (write mode only) |
 | `remove_tag(tag)` / `remove_status(status)` | Remove an entry that no note uses; refused otherwise (write mode only) |
 | `rename_tag(old, new)` / `rename_status(old, new)` | Rename a tag or a status everywhere, or merge it into an existing one (write mode only) |
 
 Note contents are untrusted data. The server instructions tell the AI never to follow instructions found in a
 note.
+
+### Safe edits
+
+Every write tool takes the same two options:
+
+- **`dry_run`**: nothing is committed; the result holds the `diff` and the lines added and removed per file.
+- **`expected_revision`** (note tools): the `revision` returned by `get_doc`, `search` and `list_docs` is the Git hash of the note file, so it changes exactly when the note changes. If the note was modified since you read it (by another session, for instance), the write is refused. The check is made against the freshly fetched `main`, not against the mirror, which can be a few seconds late. A prefix of 7 characters or more is enough.
+
+A write returns the new `revision`, the `previous_revision`, the sizes before and after (`bytes_before`, `bytes_after`) and the `changes` per file.
+
+To change a few lines, prefer `patch_doc` or `append_doc`: they cost a few dozen tokens instead of resending the whole note.
 
 ## Security model
 
@@ -74,7 +88,7 @@ note.
 | `NOTES_SYNC_INTERVAL` | `60` | Seconds between fetches (`0` disables) |
 | `NOTES_SSH_KEY` | | Path of the deploy key (SSH URLs) |
 | `NOTES_KNOWN_HOSTS` | `/app/known_hosts` | GitHub host keys, strict checking |
-| `NOTES_WRITE` | `false` | Enable `write_doc` and `rename_tag` |
+| `NOTES_WRITE` | `false` | Enable the write tools (`write_doc`, `patch_doc`, `append_doc`, `set_doc_*`, and the tag and status tools) |
 | `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL` | | Commit identity, required in write mode |
 | `HOST`, `PORT` | `0.0.0.0`, `8000` | Listen address |
 
@@ -140,7 +154,8 @@ src/notes_manager/
   utils.py        normalize, find_secret, suggest, check_id
   constants.py    patterns and limits
   tools/read.py   read-only tools
-  tools/write.py  write_doc (NOTES_WRITE=true)
+  markdown.py     headings and sections (code blocks are skipped)
+  tools/write.py  write_doc, patch_doc, append_doc, set_doc_status, set_doc_tags (NOTES_WRITE=true)
   tools/vocabulary.py  set / remove / rename for tags.yaml and status.yaml (NOTES_WRITE=true)
   tools/common.py     helpers shared by the write tools
 tests/            pytest suite
